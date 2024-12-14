@@ -71,6 +71,16 @@ Prometheus is enabled for metrics collection and monitoring.
 - **Storage**:
   - Persistent storage of `20Gi` is configured using `do-block-storage`.
 
+- **Scrape metrics**:
+prometheus:
+  enabled: true
+  prometheusSpec:
+    additionalScrapeConfigs:
+      - job_name: web-socket
+        scrape_interval: 30s
+        static_configs:
+          - targets: [ 'websocket-service-tech-backend.websocket.svc.cluster.local:8080' ] ## endpoint metrics dns k8s
+        metrics_path: '/metrics'
 ---
 
 ## Deployment Requirements

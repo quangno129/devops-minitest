@@ -5,7 +5,7 @@
 ### WebSocket Connection Examples:
 - Specific pair: `ws://localhost:8080?exchange=Binance&pair=BTC/USDT`
 - All pairs: `ws://localhost:8080`
-- Metrics: `ws://localhost:8080/metrics`
+- Metrics: `http://localhost:8080/metrics`
 
 ### Docker build
 - Build image: `docker build -t crypto-websocket-service .`

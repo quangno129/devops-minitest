@@ -59,8 +59,8 @@ This Helm chart is used to deploy a backend application on Kubernetes with confi
    git clone <repository-url>
    cd <repository-directory>
 
-helm upgrade --install tech-backend ./chart-directory \
-  --namespace <namespace> \
+helm upgrade --install websocket-service ./chart-directory \
+  --namespace websocket \
   --create-namespace \
   -f values.yaml
 
