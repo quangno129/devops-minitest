@@ -1,0 +1,19 @@
+variables:
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: 1
+  DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  HELM_TAG: ${CI_COMMIT_SHORT_SHA}
+deploy-dev:
+  stage: deploy
+  image: alpine/helm:latest
+  script:
+    - helm lint ./helm-websocket
+    - helm template model ./helm-websocket
+    - helm package ./helm-websocket -d ./publish
+    - helm repo index ./
+    - cat $GCP_SA_HELM_KEY | helm registry login -u _json_key --password-stdin https://asia-southeast1-docker.pkg.dev
+    - export VERSION=$(ls -lsa publish/  | awk '{print $10}' | tail -1)
+    - helm push ./publish/$VERSION oci://asia-southeast1-docker.pkg.dev/sre-tools-361909/helm-repo-v2
+  only:
+    - main
