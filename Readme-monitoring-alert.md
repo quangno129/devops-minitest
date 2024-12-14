@@ -127,6 +127,16 @@ Before you begin, ensure you have:
 4. **Namespace**:
    - The `monitoring` namespace will be created automatically if it does not already exist.
 
+## Monitor Metrics connection websocket
+Using plugin https://grafana.com/grafana/plugins/golioth-websocket-datasource/?tab=overview
+config as code helm chart:
+grafana:
+  plugins:
+    - golioth-websocket-datasource
+
+Run command: 
+cd /devops-minitest/monitoring-alert/prometheus-stack
+Helm apply
 --------------
 Robusta
 # Robusta Monitoring Configuration
@@ -174,9 +184,6 @@ sinksConfig:
       include:
         - namespace: "namespace need alert"
 
-## Monitor Metrics connection websocket
-Using plugin https://grafana.com/grafana/plugins/golioth-websocket-datasource/?tab=overview
-config as code helm chart:
-grafana:
-  plugins:
-    - golioth-websocket-datasource
+Run command: 
+cd /devops-minitest/monitoring-alert/robusta
+Helm apply
