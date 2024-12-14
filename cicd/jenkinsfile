@@ -1,0 +1,167 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+            apiVersion: v1
+            kind: Pod
+            spec:
+                containers:
+                - name: kaniko
+                  image: gcr.io/kaniko-project/executor:latest
+                  tty: true
+                  command:
+                  - cat
+                  volumeMounts:
+                  - name: kaniko-secret
+                    mountPath: /kaniko/.docker
+                volumes:
+                - name: kaniko-secret
+                  secret:
+                    secretName: kanikodocker
+            """
+        }
+    }
+
+    parameters {
+        string(name: 'VERSION', description: 'The version to deploy of the service. Example: 1.0.1')
+    }
+
+    environment {
+        PROJECT_NAME = "{{ PROJECT_NAME }}"
+        SERVICE_NAME = "{{ SERVICE_NAME }}"
+        IMAGE_NAME = "{{ IMAGE_NAME }}"
+        SERVICE_REPO_URL = "{{ SERVICE_REPO_URL }}"
+        ENVIRONMENT_NAME = "{{ ENVIRONMENT_NAME }}"
+        PERSONAL_ACCESS_TOKEN = credentials("github-token")
+        ECR_URL = "{{ ECR_URL }}"
+        AWS_ACCOUNT_ID = "{{ AWS_ACCOUNT_ID }}"
+        AWS_REGION = "{{ AWS_REGION }}"
+        HELMCHART_OCI = "{{ HELMCHART_OCI }}"
+        HELMCHART_VERSION = "{{ HELMCHART_VERSION }}"
+        TELEGRAM_NOTIFICATION_ENABLED = "{{ TELEGRAM_NOTIFICATION_ENABLED }}"
+        TELEGRAM_CHAT_ID = "{{ TELEGRAM_CHAT_ID }}"
+        TELEGRAM_BOT_TOKEN = "{{ TELEGRAM_BOT_TOKEN }}"
+    }
+
+    stages {
+
+        stage("Checkout") {
+            steps {
+                script {
+                    sh """
+                        git clone https://${env.PERSONAL_ACCESS_TOKEN}@github.com/cxptek/cxp-helmvalues helmvalues --depth 1
+                    """
+                }
+            }
+        }
+
+        stage("Set build name") {
+            steps {
+                script {
+                    currentBuild.displayName = "${params.VERSION}"
+                }
+            }
+        }
+
+        stage("Decrypt helm chart secrets") {
+            steps {
+                script {
+                    dir("helmvalues") {
+                        sh """
+                            set +x
+                            aws_credentials=\$(aws sts assume-role --role-arn arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ENVIRONMENT_NAME}_jenkins_deployment_role --role-session-name jenkins)
+                            export AWS_ACCESS_KEY_ID="\$(echo "\${aws_credentials}" | jq -r '.Credentials.AccessKeyId')"
+                            export AWS_SECRET_ACCESS_KEY="\$(echo "\${aws_credentials}" | jq -r '.Credentials.SecretAccessKey')"
+                            export AWS_SESSION_TOKEN="\$(echo "\${aws_credentials}" | jq -r '.Credentials.SessionToken')"
+                            set -x
+
+                            sops --decrypt ./core/${ENVIRONMENT_NAME}/${SERVICE_NAME}/${SERVICE_NAME}-secrets.yaml > ./core/${ENVIRONMENT_NAME}/${SERVICE_NAME}/${SERVICE_NAME}-secrets-decrypted.yaml
+
+                            set +x
+                            unset AWS_ACCESS_KEY_ID
+                            unset AWS_SECRET_ACCESS_KEY
+                            unset AWS_SESSION_TOKEN
+                            set -x
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Build and Push Docker Image using Kaniko') {
+            steps {
+                container('kaniko') {
+                    script {
+                        sh """
+                            /kaniko/executor \
+                              --context `pwd` \
+                              --dockerfile `pwd`/Dockerfile \
+                              --destination=${ECR_URL}/${PROJECT_NAME}/image/${IMAGE_NAME}:${params.VERSION} \
+                              --insecure \
+                              --skip-tls-verify
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy helm chart to K8S') {
+            steps {
+
+                sh """
+                    #!/usr/bin/env bash
+                    ECR_MANIFEST=\$(aws ecr batch-get-image --repository-name "${PROJECT_NAME}/image/${IMAGE_NAME}" --image-ids imageTag="${params.VERSION}" --output text --query 'images[].imageManifest' --region ${AWS_REGION})
+                    aws ecr put-image --repository-name "${PROJECT_NAME}/image/${IMAGE_NAME}" --image-tag "${ENVIRONMENT_NAME}-${params.VERSION}" --image-manifest \${ECR_MANIFEST} --region ${AWS_REGION} || echo "Tag ${ENVIRONMENT_NAME}-${params.VERSION} existed"
+                """
+
+                withCredentials([file(credentialsId: '{{ PROJECT_NAME }}-{{ ENVIRONMENT_NAME }}-kubeconfig', variable: 'KUBECONFIG')]) {
+                    dir("helmvalues") {
+                        sh """
+                            aws ecr get-login-password --region ${AWS_REGION} | helm registry login --username AWS --password-stdin ${ECR_URL}
+
+                            helm upgrade ${PROJECT_NAME}-${SERVICE_NAME} ${HELMCHART_OCI} \
+                                --version ${HELMCHART_VERSION} \
+                                --install \
+                                --namespace ${ENVIRONMENT_NAME} \
+                                --create-namespace \
+                                --set image.repository="${ECR_URL}/${PROJECT_NAME}/image/${IMAGE_NAME}" \
+                                --set image.tag="${params.VERSION}" \
+                                -f ./core/${ENVIRONMENT_NAME}/${SERVICE_NAME}/${SERVICE_NAME}.yaml \
+                                -f ./core/${ENVIRONMENT_NAME}/${SERVICE_NAME}/${SERVICE_NAME}-secrets-decrypted.yaml
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                if ("${TELEGRAM_NOTIFICATION_ENABLED}" == 'true') {
+                    sh """
+                    curl -X POST -H 'Content-Type: application/json' -d '{"chat_id": "${TELEGRAM_CHAT_ID}", "text": "✅Deploy ${SERVICE_NAME}#${params.VERSION} to ${ENVIRONMENT_NAME} environment successfully.", "disable_notification": false}' https://api.telegram.org/${TELEGRAM_BOT_TOKEN}/sendMessage
+                    """
+                }
+            }
+        }
+        failure {
+            script {
+                if ("${TELEGRAM_NOTIFICATION_ENABLED}" == 'true') {
+                    sh """
+                    curl -X POST -H 'Content-Type: application/json' -d '{"chat_id": "${TELEGRAM_CHAT_ID}", "text": "❌Deploy ${SERVICE_NAME}#${params.VERSION} to ${ENVIRONMENT_NAME} environment failed.\nPlease check: ${env.BUILD_URL}", "disable_notification": false}' https://api.telegram.org/${TELEGRAM_BOT_TOKEN}/sendMessage
+                    """
+                }
+            }
+        }
+        aborted {
+            script {
+                if ("${TELEGRAM_NOTIFICATION_ENABLED}" == 'true') {
+                    sh """
+                    curl -X POST -H 'Content-Type: application/json' -d '{"chat_id": "${TELEGRAM_CHAT_ID}", "text": "⚫️Deploy ${SERVICE_NAME}#${params.VERSION} to ${ENVIRONMENT_NAME} environment aborted.\nPlease check: ${env.BUILD_URL}", "disable_notification": false}' https://api.telegram.org/${TELEGRAM_BOT_TOKEN}/sendMessage
+                    """
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,12 @@
+repositories:
+  - name: robusta
+    url: https://robusta-charts.storage.googleapis.com
+
+releases:
+  - name: robusta
+    namespace: robusta 
+    chart: robusta/robusta
+    createNamespace: true
+    version: 0.19.0
+    values:
+      - values.yaml

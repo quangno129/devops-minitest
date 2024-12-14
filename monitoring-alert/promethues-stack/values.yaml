@@ -1,0 +1,157 @@
+grafana:
+  plugins:
+    - golioth-websocket-datasource
+  enabled: true
+  additionalDataSources:
+  - access: proxy
+    isDefault: false
+    name: loki
+    orgId: 1
+    type: loki
+    url: http://loki:3100
+    version: 1
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: do-block-storage
+    accessModes:
+    - ReadWriteOnce
+    size: 1Gi
+  ingress:
+    ## If true, Grafana Ingress will be created
+    ##
+    enabled: true
+    ## IngressClassName for Grafana Ingress.
+    ## Should be provided if Ingress is enable.
+    ##
+    # inueessClassName: nginx
+
+    ## Annotations for Grafana Ingress
+    ##
+    annotations:
+      cert-manager.io/cluster-issuer:  "letsencrypt-issuer-1"
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      kubernetes.io/tls-acme: "true"
+      kubernetes.io/ingress.class: nginx
+    ## Labels to be added to the Ingress
+    ##
+    labels: {}
+
+    ## Hostnames.
+    ## Must be provided if Ingress is enable.
+    ##
+    hosts:
+      - monitor.staging.tradingos.com
+
+    ## Path for grafana ingress
+    path: /
+
+    ## TLS configuration for grafana Ingress
+    ## Secret must be manually created in the namespace
+    ##
+    tls:
+    - secretName: grafana.staging.tradingos.com.grafana-general-tls-gvpxt
+      hosts:
+      - monitor.staging.tradingos.com
+alertmanager:
+  enabled: true
+  persistence:
+    size: 1Gi
+    storageClassName: do-block-storage
+  config:
+    global:
+      resolve_timeout: 5m
+      smtp_from: 'care@tradingstudio.com'
+      smtp_smarthost: '****************.amazonaws.com:465'
+      smtp_auth_username: '****************'
+      smtp_auth_password: '****************'
+      smtp_require_tls: false
+    inhibit_rules:
+    - equal:
+      - namespace
+      - alertname
+      source_matchers:
+      - severity = critical
+      target_matchers:
+      - severity =~ warning|info
+    - equal:
+      - namespace
+      - alertname
+      source_matchers:
+      - severity = warning
+      target_matchers:
+      - severity = info
+    - equal:
+      - namespace
+      source_matchers:
+      - alertname = InfoInhibitor
+      target_matchers:
+      - severity = info
+    receivers:
+    - name: 'gmail-notifications'
+      email_configs:
+      - to: 'tradingos-alert@tradingstudio.com'
+        send_resolved: true
+        text: "<!channel> \n {{ .CommonAnnotations.summary  }} \n
+            *Alert priority*:
+          {{ range .Alerts -}}
+            *Alert:* {{ .Annotations.title }}{{ if .Labels.severity }} - `{{ .Labels.severity }}`{{ end }} \n
+          *ClusterName:* {{ .Labels.cluster }} \n
+          *Description:* {{ .Annotations.description }} \n
+          *Graph:* <{{ .GeneratorURL }}|:chart_with_upwards_trend:> \n
+          *Runbook:* <{{ .Annotations.runbook_url }}|:spiral_note_pad:> \n
+          *Details:* \n
+            {{ range .Labels.SortedPairs }} • *{{ .Name }}:* `{{ .Value }}` \n
+            {{ end }}
+          {{ end }}" 
+    - name: empty
+    route:
+      group_by:
+      - alertname
+      group_interval: 1m
+      group_wait: 30s
+      receiver: gmail-notifications
+      repeat_interval: 4h
+      routes:
+      - match:
+          alertname: Watchdog
+        receiver: empty
+    templates:
+    - /etc/alertmanager/config/*.tmpl
+  alertmanagerSpec:
+    retention: 300h
+    storage: 
+      volumeClaimTemplate:
+        spec:
+          storageClassName: do-block-storage
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi       
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 50
+          preference:
+            matchExpressions:
+            - key: doks.digitalocean.com/node-pool
+              operator: In
+              values:
+              - trading-monitor  
+prometheus:
+  enabled: true
+  prometheusSpec:
+    externalLabels: 
+      cluster: tradingos-staging
+    retention: 90d
+    storageSpec: 
+    # Using PersistentVolumeClaim
+    #
+      volumeClaimTemplate:
+        spec:
+          storageClassName: do-block-storage
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi

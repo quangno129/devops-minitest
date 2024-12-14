@@ -1,0 +1,20 @@
+{
+  "exchanges": [
+    {
+      "name": "Binance",
+      "websocketUrl": "wss://stream.binance.com:9443/ws",
+      "pairs": [
+        "BTC/USDT",
+        "ETH/USDT"
+      ]
+    },
+    {
+      "name": "Bybit",
+      "websocketUrl": "wss://stream.bybit.com/realtime",
+      "pairs": [
+        "BTC/USDT",
+        "ETH/USDT"
+      ]
+    }
+  ]
+}

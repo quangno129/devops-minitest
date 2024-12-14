@@ -1,0 +1,175 @@
+
+sinksConfig:
+- discord_sink:
+    name: <discord_name>
+    url: <webhook>
+    scope:
+      include:
+        - namespace: "namespace need alert"
+
+# global parameters
+clusterName: "Cluster_Nanme"
+clusterZone: "Cluster_zone"
+
+global:
+  clusterDomain: "cluster.local"
+
+# builtin playbooks
+builtinPlaybooks:
+# playbooks for non-prometheus based monitoring
+- name: "CrashLoopBackOff"
+  triggers:
+  - on_pod_crash_loop:
+      restart_reason: "CrashLoopBackOff"
+      restart_count: 2
+      rate_limit: 30
+  actions:
+  - report_crash_loop: {}
+
+
+- name: "PodOOMKill"
+  triggers:
+  - on_pod_oom_killed:
+      rate_limit: 10  #change limit alert in per *** seconds
+  actions:
+  - pod_oom_killer_enricher:
+      attach_logs: true
+      container_memory_graph: true
+      node_memory_graph: true
+      dmesg_log: true
+  stop: true
+
+enablePlatformPlaybooks: false
+
+platformPlaybooks:
+- name: "K8sWarningEventsReport"
+  triggers:
+  - on_kubernetes_warning_event_create:
+      exclude: ["NodeSysctlChange"]
+  actions:
+  - warning_events_report:
+      warning_event_groups:
+        - aggregation_key: PodLifecycleWarning
+          matchers:
+            - FailedCreatePodSandBox
+            - FailedToRetrieveImagePullSecret
+            - BackOff
+            - FailedDaemonPod
+            - FailedKillPod
+            - FailedPreStopHook
+            - ExceededGracePeriod
+            - Evicted
+        - aggregation_key: NodeHealthWarning
+          matchers:
+            - InvalidDiskCapacity
+            - NodeNotReady
+            - NodeRegistrationCheckerStart
+            - WorkflowNodeFailed
+            - OOMKilling
+            - FailedDraining
+            - PreemptScheduled
+            - NodeRegistrationCheckerDidNotRunChecks
+            - NodeShutdown
+            - TerminateScheduled
+            - FreeDiskSpaceFailed
+            - NodeSysctlChange
+            - SystemOOM
+            - NodeStartupFailed
+            - Drain
+            - ScaleUpFailed
+            - ScaleDownFailed
+        - aggregation_key: ProbeFailure
+          matchers:
+            - Unhealthy
+            - ProbeError
+            - ProbeWarning
+        - aggregation_key: PolicyViolation
+          matchers:
+            - PolicyViolation
+        - aggregation_key: ScaleWarning
+          matchers:
+            - FailedGetResourceMetric
+            - FailedComputeMetricsReplicas
+            - KEDAScalerFailed
+            - FailedGetContainerResourceMetric
+            - FailedGetExternalMetric
+            - ScaledObjectCheckFailed
+            - FailedGetObjectMetric
+        - aggregation_key: SchedulingWarning
+          matchers:
+            - FailedScheduling
+        - aggregation_key: VolumeWarning
+          matchers:
+            - FailedMount
+            - FailedAttachVolume
+            - VolumeFailedDelete
+  - event_resource_events: {}
+  sinks:
+    - "<discord_name>"
+
+- name: "K8sChangeTracking"
+  triggers:
+    - on_kubernetes_resource_operation:
+        resources: ["deployment", "daemonset", "statefulset"]
+  actions:
+    - resource_babysitter: {}
+  sinks:
+    - "<discord_name>"
+
+- name: "IngressChangeTracking"
+  triggers:
+    - on_ingress_all_changes: {}
+  actions:
+    - resource_babysitter: {}
+    - customise_finding:
+        title: Ingress Changes
+        aggregation_key: IngressChange
+  sinks:
+    - "<discord_name>"
+
+- name: "EventBasedChangeTracking"
+  triggers:
+    - on_kubernetes_resource_operation:
+        resources: ["deployment", "replicaset", "daemonset", "statefulset", "pod", "node", "job" ]
+  actions:
+    - resource_events_diff: {}
+
+- name: "K8sJobFailure"
+  triggers:
+  - on_job_failure: {}
+  actions:
+  - create_finding:
+      aggregation_key: "JobFailure"
+      title: "Job $name on namespace $namespace failed"
+  - job_info_enricher: {}
+  - job_events_enricher: {}
+  - job_pod_enricher: {}
+  sinks:
+    - "<discord_name>"
+
+- name: "WeeklyKRRScan"
+  triggers:
+  - on_schedule:
+      cron_schedule_repeat:
+        cron_expression: "0 12 * * 1" # every Monday at 12:00
+  actions:
+  - krr_scan: {}
+  sinks:
+    - "<discord_name>"
+
+- name: "RobustaMaintenance"
+  triggers:
+  - on_schedule:
+      cron_schedule_repeat:
+        cron_expression: "0 */3 * * *" # every 3 hours
+  actions:
+  - cleanup_robusta_pods:
+      hours_back: 6
+  sinks:
+    - "<discord_name>"
+
+# Any playbook name listed here will be disabled
+disabledPlaybooks: []
+
+runner:
+  imageName: robusta-runner:0.19.0
