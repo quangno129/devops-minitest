@@ -1,3 +1,6 @@
+Grafana: monitor connection websocket ram cpu high ....
+Robusta: alert pods restart
+
 # Monitoring Configuration for Kubernetes (values.yaml)
 
 This file defines the configuration for monitoring tools deployed on a Kubernetes cluster. It includes configurations for Grafana, Alertmanager, and Prometheus, along with data persistence, ingress, and alerting rules.
@@ -137,13 +140,6 @@ Before you begin, ensure you have:
 4. **Namespace**:
    - The `monitoring` namespace will be created automatically if it does not already exist.
 
-## Monitor Metrics connection websocket
-Using plugin https://grafana.com/grafana/plugins/golioth-websocket-datasource/?tab=overview
-config as code helm chart:
-grafana:
-  plugins:
-    - golioth-websocket-datasource
-
 Run command: 
 cd /devops-minitest/monitoring-alert/prometheus-stack
 Helm apply
@@ -151,6 +147,15 @@ Helm apply
 Robusta
 # Robusta Monitoring Configuration
 This file contains the configuration for the Robusta monitoring framework, designed to enhance Kubernetes monitoring and alerting. The configuration integrates with Discord for notifications, defines custom playbooks for handling events, and includes platform playbooks for advanced use cases.
+Robusta - Kubernetes Monitoring and Alerts
+Robusta is a powerful Kubernetes monitoring framework designed for real-time event alerts and automated issue resolution. It enhances cluster monitoring with the following key features:
+
+Pod Restart Alerts: Automatically detects and alerts on Pod restarts, providing detailed context (e.g., reasons like CrashLoopBackOff or OOMKilled).
+Discord Integration: Sends alert notifications directly to Discord channels via webhooks for immediate team awareness.
+Custom Playbooks: Automates responses to critical events, such as analyzing Pod logs or identifying resource bottlenecks.
+Prometheus and Grafana Integration: Works seamlessly with existing monitoring stacks for metrics visualization and additional alerting.
+Advanced Filtering: Allows namespace-specific alerting and fine-tuned scope definitions.
+
 ---
 ## Key Features
 
