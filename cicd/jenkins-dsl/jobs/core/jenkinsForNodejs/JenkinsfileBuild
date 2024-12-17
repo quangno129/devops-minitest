@@ -1,0 +1,128 @@
+podTemplate(
+    envVars: [
+        envVar(key: 'PROJECT_NAME', value: "{{ PROJECT_NAME }}"),
+        envVar(key: 'SERVICE_NAME', value: "{{ SERVICE_NAME }}"),
+        envVar(key: 'SERVICE_REPO_URL', value: "{{ SERVICE_REPO_URL }}"),
+        envVar(key: 'VERSION', value: "1.0"),
+        envVar(key: 'ECR_URL', value: "{{ ECR_URL }}"),
+        envVar(key: 'TELEGRAM_NOTIFICATION_ENABLED', value: "{{ TELEGRAM_NOTIFICATION_ENABLED }}"),
+        envVar(key: 'TELEGRAM_CHAT_ID', value: "{{ TELEGRAM_CHAT_ID }}"),
+        envVar(key: 'TELEGRAM_BOT_TOKEN', value: "{{ TELEGRAM_BOT_TOKEN }}"),
+    ],
+    yaml: """
+        apiVersion: "v1"
+        kind: "Pod"
+        spec:
+            tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "JenkinsAgentGroup"
+              effect: "NoSchedule"
+            - key: "dedicated"
+              operator: "Equal"
+              value: "JenkinsAgentGroup"
+              effect: "NoExecute"
+    """,
+    namespace: 'devops',
+    nodeSelector: 'group=JenkinsAgentGroup',
+    containers: [
+        containerTemplate(name: 'kaniko', image: 'gcr.io/kaniko-project/executor:{{ KANIKO_VERSION }}', ttyEnabled: true, privileged: true, command: 'cat'),
+        containerTemplate(name: 'sonar-scanner', image: 'sonarsource/sonar-scanner-cli:5.0.1', ttyEnabled: true, privileged: true, command: 'cat')
+    ],
+    volumes: [
+        secretVolume(mountPath: '/kaniko/.docker', secretName: 'kanikodocker', readOnly: false)
+    ]) {
+
+    node(POD_LABEL) {
+
+        try {
+            stage('Checkout') {
+                CURRENT_STAGE = "${env.STAGE_NAME}"
+                withCredentials([string(credentialsId: 'github-token', variable: 'PERSONAL_ACCESS_TOKEN')]) {
+                    sh """
+                        git clone -b ${params.BRANCH_TO_BUILD} https://${PERSONAL_ACCESS_TOKEN}@${env.SERVICE_REPO_URL} service --depth 1
+                    """
+                }
+            }
+
+            stage("Extract version") {
+                CURRENT_STAGE = "${env.STAGE_NAME}"
+                VERSION = "${VERSION}.${env.BUILD_NUMBER}"
+                currentBuild.displayName = "${VERSION}"
+                if (params.BRANCH_TO_BUILD != 'main') {
+                    currentBuild.description = "From the branch: ${params.BRANCH_TO_BUILD}"
+                }
+                addShortText(text: "${params.BRANCH_TO_BUILD}", border: 0, background: 'yellow')
+            }
+
+            stage("SonarQube Analysis") {
+                CURRENT_STAGE = "${env.STAGE_NAME}"
+                dir("service") {
+                    container(name: 'sonar-scanner') {
+                        withSonarQubeEnv('sonarqube') {
+                            sh """
+                                sonar-scanner -Dsonar.projectKey=${SERVICE_NAME}
+                            """
+                        }
+                    }
+                }
+            }
+
+            //stage("SonarQube Quality Gate") {
+            //    timeout(time: 2, unit: 'MINUTES') {
+            //        def qg = waitForQualityGate()
+            //        if (qg.status != 'OK') {
+            //            error "Pipeline aborted due to quality gate failure: ${qg.status}"
+            //        }
+            //    }
+            //}
+
+            stage("Build and Push Docker Image to ECR") {
+                CURRENT_STAGE = "${env.STAGE_NAME}"
+                dir("service") {
+                    container(name: 'kaniko', shell: '/busybox/sh') {
+                        withCredentials([string(credentialsId: 'npm-registry-token', variable: 'NPM_REGISTRY_TOKEN')]) {
+                            sh """#!/busybox/sh
+                                /kaniko/executor -f `pwd`/Dockerfile -c `pwd` --build-arg NPM_REGISTRY_TOKEN="${NPM_REGISTRY_TOKEN}" --insecure --skip-tls-verify --cache=true --destination=${ECR_URL}/${PROJECT_NAME}/image/${SERVICE_NAME}:${VERSION}
+                            """
+                        }
+                    }
+                }
+            }
+
+            stage("Tag the version") {
+                CURRENT_STAGE = "${env.STAGE_NAME}"
+                dir("service") {
+                    sh """
+                        git config user.email jenkins
+                        git config user.name jenkins
+                        git tag -a "v${VERSION}" -m "From branch: ${params.BRANCH_TO_BUILD}"
+                        git push origin "v${VERSION}"
+                    """
+                }
+
+                currentBuild.result = 'SUCCESS'
+            }
+        } catch (e) {
+            currentBuild.result = 'FAILURE'
+        } finally {
+            if (currentBuild.result == 'SUCCESS') {
+                if (params.BRANCH_TO_BUILD == 'main') {
+                    build job: "${env.SERVICE_NAME}-deploy-dev", propagate: false, wait: false, parameters: [string(name: 'VERSION', value: "${VERSION}")]
+                }
+
+                if ("${TELEGRAM_NOTIFICATION_ENABLED}" == 'true') {
+                    sh """
+                    curl -X POST -H 'Content-Type: application/json' -d '{"chat_id": "${TELEGRAM_CHAT_ID}", "text": "✅✅✅Build ${currentBuild.result}\nJob name: ${currentBuild.fullDisplayName}\nBranch: ${params.BRANCH_TO_BUILD}\nJob url: ${env.BUILD_URL}", "disable_notification": false}' https://api.telegram.org/${TELEGRAM_BOT_TOKEN}/sendMessage
+                    """
+                }
+            } else {
+                if ("${TELEGRAM_NOTIFICATION_ENABLED}" == 'true') {
+                    sh """
+                    curl -X POST -H 'Content-Type: application/json' -d '{"chat_id": "${TELEGRAM_CHAT_ID}", "text": "❌❌❌Build ${currentBuild.result} at this stage ${CURRENT_STAGE}\nJob name: ${currentBuild.fullDisplayName}\nBranch: ${params.BRANCH_TO_BUILD}\nJob url: ${env.BUILD_URL}", "disable_notification": false}' https://api.telegram.org/${TELEGRAM_BOT_TOKEN}/sendMessage
+                    """
+                }
+            }
+        }
+    }
+}

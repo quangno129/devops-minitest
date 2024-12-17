@@ -1,0 +1,173 @@
+controller:
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      cert-manager.io/cluster-issuer: letsencrypt
+    ingressClassName: nginx
+    hostName: <domain-name>
+    tls:
+      - secretName: letsencrypt-jenkins
+        hosts:
+          - <domain-name>
+  installPlugins:
+  - role-strategy:717.v6a_69a_fe98974
+  - configuration-as-code:1810.v9b_c30a_249a_4c
+  - credentials-binding:657.v2b_19db_7d6e6d
+  - branch-api:2.1163.va_f1064e4a_a_f3
+  - config-file-provider:973.vb_a_80ecb_9a_4d0
+  - envinject:2.908.v66a_774b_31d93
+  - environment-script:100.v3a_f1a_6a_b_7549
+  - jobConfigHistory:1229.v3039470161a_d
+  - rebuild:332.va_1ee476d8f6d
+  - git:5.2.1
+  - timestamper:1.26
+  - job-dsl:1.87
+  - workflow-aggregator:596.v8c21c963d92d
+  - workflow-job:1400.v7fd111b_ec82f
+  - kubernetes:4203.v1dd44f5b_1cf9
+  - bouncycastle-api:2.30.1.78.1-233.vfdcdeb_0a_08a_a_
+  - cloudbees-folder:6.928.v7c780211d66e
+  - promoted-builds:945.v597f5c6a_d3fd
+  - generic-webhook-trigger:2.2.0
+  - multibranch-scan-webhook-trigger:1.0.11
+  - github-branch-source:1787.v8b_8cd49a_f8f1
+  - pipeline-githubnotify-step:49.vf37bf92d2bc8
+  - build-name-setter:2.4.2
+  - parameterized-trigger:787.v665fcf2a_830b_
+  - delivery-pipeline-plugin:1.4.2
+  - matrix-auth:3.2.2
+  - oic-auth:4.250.v5a_d993226437
+  - telegram-notifications:1.4.0
+  - blueocean:1.27.12
+  - durable-task:555.v6802fe0f0b_82
+  - matrix-project:822.824.v14451b_c0fd42
+  - sonar:2.17.2
+  - badge:1.9.1
+  - htmlpublisher:1.33
+  - warnings-ng:11.2.2
+  - ansicolor:1.0.4
+  - pipeline-utility-steps:2.16.2
+  - checks-api:2.2.0
+  - github-checks:554.vb_ee03a_000f65
+  image:
+    tag: lts
+
+  jenkinsUrl: "https://<domain-name>"
+
+  JCasC:
+    enabled: true
+    configScripts:
+      base-config: |
+        jenkins:
+          systemMessage: "Configured as Code QQ"
+          authorizationStrategy:
+            projectMatrix:
+              permissions:
+                - "GROUP:Overall/Read:authenticated"
+                - "USER:Overall/Administer:admin"
+        unclassified:
+          globalLibraries:
+            libraries:
+            - name: "jenkins-lib"
+              defaultVersion: "main"
+              implicit: true
+              retriever:
+                modernSCM:
+                  scm:
+                    git:
+                      id: "DSL-infrastructure-repo"
+                      remote: "https://github.com/quangno129/jenkins-dsl"
+                      credentialsId: "github-credential"
+                      traits:
+                        - cloneOption:
+                            extension:
+                              depth: 1
+                              noTags: true
+                              shallow: true
+        jobs:
+          - script: >
+              pipelineJob('Seed Jobs') {
+                  triggers {
+                      genericTrigger {
+                          genericVariables {
+                              genericVariable {
+                                  key("ref")
+                                  value("\$.pull_request.base.ref")
+                                  expressionType("JSONPath") //Optional, defaults to JSONPath
+                                  regexpFilter("") //Optional, defaults to empty string
+                                  defaultValue("") //Optional, defaults to empty string
+                              }
+                              genericVariable {
+                                  key("merged")
+                                  value("\$.pull_request.merged")
+                                  expressionType("JSONPath") //Optional, defaults to JSONPath
+                                  regexpFilter("") //Optional, defaults to empty string
+                                  defaultValue("") //Optional, defaults to empty string
+                              }
+                              genericVariable {
+                                  key("action")
+                                  value("\$.action")
+                                  expressionType("JSONPath") //Optional, defaults to JSONPath
+                                  regexpFilter("") //Optional, defaults to empty string
+                                  defaultValue("") //Optional, defaults to empty string
+                              }
+                          }
+                          token("jenkins-dsl")
+                          tokenCredentialId('')
+                          printContributedVariables(true)
+                          printPostContent(true)
+                          silentResponse(false)
+                          shouldNotFlattern(false)
+                          regexpFilterText("\$ref-\$merged-\$action")
+                          regexpFilterExpression("main-true-closed")
+                      }
+                  }
+                  definition {
+                      cps {
+                          script('createJobs()')
+                          sandbox()
+                      }
+                  }
+              }
+        security:
+          globaljobdslsecurityconfiguration:
+            useScriptSecurity: false
+  sidecars:
+    configAutoReload:
+      enabled: true
+persistence:
+  enabled: true
+  storageClassName: gp2
+agent:
+  containerCap: 500
+  securityContext:
+    allowPrivilegeEscalation: false
+    runAsUser: 0
+  image:
+    repository: "quangno129/jenkins-agent"
+    tag: "0.0.1"
+#  containerCap: 20
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1024m"
+      memory: "4Gi"
+  nodeSelector:
+    group : "JenkinsAgentGroup"
+  yamlTemplate: |-
+    apiVersion: "v1"
+    kind: "Pod"
+    spec:
+      tolerations:
+      - key: "dedicated"
+        operator: "Equal"
+        value: "JenkinsAgentGroup"
+        effect: "NoSchedule"
+      - key: "dedicated"
+        operator: "Equal"
+        value: "JenkinsAgentGroup"
+        effect: "NoExecute"
+  yamlMergeStrategy: "merge"
