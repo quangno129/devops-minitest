@@ -130,14 +130,14 @@ alertmanager:
             requests:
               storage: 1Gi       
 prometheus:
-  enabled: true
+  enable: true
   prometheusSpec:
-    additionalScrapeConfigs:
-      - job_name: web-socket
-        scrape_interval: 30s
-        static_configs:
-          - targets: [ 'websocket-service-tech-backend.websocket.svc.cluster.local:8080' ]
-        metrics_path: '/metrics'
+    additionalScrapeConfigs: 
+    - job_name: "web-socket"
+      scrape_interval: 30s
+      static_configs:
+        - targets: ["web-socket-tech-backend.default.svc.cluster.local:8080"]
+      metrics_path: "/metrics"
     externalLabels: 
       cluster: tradingos-staging
     retention: 90d
