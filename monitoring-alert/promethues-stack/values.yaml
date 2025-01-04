@@ -129,16 +129,6 @@ alertmanager:
           resources:
             requests:
               storage: 1Gi       
-    affinity:
-      nodeAffinity:
-        preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 50
-          preference:
-            matchExpressions:
-            - key: doks.digitalocean.com/node-pool
-              operator: In
-              values:
-              - trading-monitor  
 prometheus:
   enabled: true
   prometheusSpec:

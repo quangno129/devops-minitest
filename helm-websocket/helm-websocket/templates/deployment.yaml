@@ -31,37 +31,36 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: {{ include "tech-backend.fullname" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          {{- if .Values.configmap.enabled }}   
+          ports:
+            - name: http
+              containerPort: {{ .Values.image.containerPort }}
+              protocol: TCP
+          resources:
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}
+          {{- if .Values.configmap.enabled }}
           volumeMounts:
             - name: config-websocket
               mountPath: /usr/src/app/config.json
               readOnly: true
               subPath: config.json
           {{- end }}
-      {{- if .Values.configmap.enabled }} 
-      volumes:
-        - configMap:
-            defaultMode: 256
-            name: {{ .Release.Name }}-config
-            optional: false
-          name: config-websocket
-      {{- end }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - name: http
-              containerPort: {{ .Values.image.containerPort }}
-              protocol: TCP
           env:
-          {{- with .Values.deployment.env }}
-            {{- toYaml . | nindent 8 }}
-          {{- end }}  
+            {{- with .Values.deployment.env }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.secret.enabled }}
           envFrom:
-          {{- if .Values.secret.enabled }}   
-          - secretRef:
-              name: {{ .Release.Name }}-secret
+            - secretRef:
+                name: {{ .Release.Name }}-secret
           {{- end }}
           {{- if .Values.livenessProbe.enable }}
           livenessProbe:
@@ -71,13 +70,14 @@ spec:
           readinessProbe:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           {{- end }}
-          resources:
-            limits:
-              cpu: {{ .Values.resources.limits.cpu }}
-              memory: {{ .Values.resources.limits.memory }}
-            requests:
-              cpu: {{ .Values.resources.requests.cpu }}
-              memory: {{ .Values.resources.requests.memory }}
+      {{- if .Values.configmap.enabled }}
+      volumes:
+        - name: config-websocket
+          configMap:
+            name: {{ .Release.Name }}-config
+            optional: false
+            defaultMode: 256
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -5,11 +5,11 @@
 replicaCount: 1
 
 image:
-  repository: nginx
+  repository: quangno129/websocket-demo
   pullPolicy: IfNotPresent
   containerPort: 8080
   # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+  tag: "2"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -54,7 +54,7 @@ resources:
     cpu: 500m
     memory: 528Mi
 livenessProbe:
-  enable: true
+  enable: false
   failureThreshold: 3
   httpGet:
     path: /actuator/health/liveness
@@ -66,7 +66,7 @@ livenessProbe:
   timeoutSeconds: 1
 
 readinessProbe:
-  enable: true
+  enable: false
   failureThreshold: 3
   httpGet:
     path: /actuator/health/readiness
@@ -93,7 +93,7 @@ deployment:
   env:  {}
 secret:
   enabled: true
-  apiKey: your-api-key
+  apiKey: "YWRhZ3FlZ3Fl"
 configmap: 
   enabled: true
   configJson: |
